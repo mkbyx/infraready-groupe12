@@ -1,0 +1,77 @@
+---
+# Prometheus + Grafana sur OPS01
+- name: Prometheus et Grafana
+  hosts: ops
+  become: true
+  tasks:
+    - name: Installer Prometheus (paquet Ubuntu)
+      ansible.builtin.apt:
+        name: prometheus
+        update_cache: true
+        state: present
+
+    - name: Deployer prometheus.yml (valide par promtool)
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../monitoring/prometheus.yml"
+        dest: /etc/prometheus/prometheus.yml
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+        validate: promtool check config %s
+      notify: restart prometheus
+
+    - name: Prometheus actif
+      ansible.builtin.systemd:
+        name: prometheus
+        enabled: true
+        state: started
+
+    - name: Dossier keyrings
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Cle GPG Grafana
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg-full.key
+        dest: /etc/apt/keyrings/grafana.asc
+        mode: "0644"
+
+    - name: Depot APT Grafana
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main"
+        filename: grafana
+        state: present
+
+    - name: Installer Grafana
+      ansible.builtin.apt:
+        name: grafana
+        update_cache: true
+        state: present
+
+    - name: Source de donnees Prometheus (provisioning)
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/grafana-datasource.yml"
+        dest: /etc/grafana/provisioning/datasources/prometheus.yml
+        owner: root
+        group: grafana
+        mode: "0640"
+      notify: restart grafana
+
+    - name: Grafana actif
+      ansible.builtin.systemd:
+        name: grafana-server
+        enabled: true
+        state: started
+
+  handlers:
+    - name: restart prometheus
+      ansible.builtin.systemd:
+        name: prometheus
+        state: restarted
+    - name: restart grafana
+      ansible.builtin.systemd:
+        name: grafana-server
+        state: restarted

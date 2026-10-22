@@ -1,0 +1,10 @@
+*.iso
+*.vmdk
+*.vmx
+*.vault
+*.pem
+*.key
+id_*
+.env
+*.retry
+evidence/
