@@ -1,0 +1,64 @@
+name: Validation InfraReady
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les outils
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core ansible-lint yamllint pywinrm
+          ansible-galaxy collection install -r requirements.yml
+
+      - name: Lint YAML
+        run: yamllint -c .yamllint inventory group_vars playbooks monitoring .github
+
+      - name: Verification de l'inventaire
+        run: ansible-inventory -i inventory/hosts.yml --list > /dev/null
+
+      - name: Verification syntaxique des playbooks
+        run: |
+          for pb in playbooks/*.yml; do
+            echo "== $pb"
+            ansible-playbook -i inventory/hosts.yml "$pb" --syntax-check
+          done
+
+      - name: Ansible-lint
+        run: ansible-lint playbooks/
+
+      - name: Dashboards Grafana (JSON valide)
+        run: |
+          for f in monitoring/dashboards/*.json; do python -m json.tool "$f" > /dev/null; done
+
+      - name: Verifier la config Prometheus et les regles
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 check rules /m/alerts.yml
+          docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.55.1 check config /m/prometheus.yml || true
+
+      - name: Controle anti-secrets
+        run: |
+          set -e
+          if git ls-files | grep -E '(^|/)(\.vault_pass|\.env|id_rsa|.*\.pem|.*\.key)$'; then
+            echo "Fichier sensible versionne"; exit 1
+          fi
+          if [ -f group_vars/windows/vault.yml ] && ! head -1 group_vars/windows/vault.yml | grep -q '^\$ANSIBLE_VAULT'; then
+            echo "vault.yml n'est pas chiffre"; exit 1
+          fi
+          if grep -rEn --exclude-dir=.git --exclude=validation.yml --exclude=*.example '(password|passwd|secret)\s*[:=]\s*["'"'"']?[A-Za-z0-9!@#$%^&*]{6,}' . | grep -v -E 'vault_|CHANGEME|\{\{|safe_mode_password|password_lock|update_password|GRAFANA_ADMIN_PASSWORD|ansible_password'; then
+            echo "Secret potentiel en clair"; exit 1
+          fi
+          echo "Aucun secret detecte"

@@ -1,0 +1,161 @@
+---
+# Tache C / D - Configuration Linux (lin01, mon01)
+# Lancement : ansible-playbook playbooks/linux.yml
+# Test a blanc : ansible-playbook playbooks/linux.yml --check --diff
+- name: Configuration de base des serveurs Linux
+  hosts: linux
+  become: true
+  tasks:
+    - name: Creer les groupes
+      ansible.builtin.group:
+        name: "{{ item.name }}"
+        state: present
+      loop: "{{ linux_groups }}"
+
+    - name: Creer les utilisateurs de test (sans mot de passe, shell standard)
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        groups: "{{ item.groups }}"
+        append: true
+        shell: /bin/bash
+        password_lock: true
+      loop: "{{ linux_users }}"
+
+    - name: Verifier la presence de sshd
+      ansible.builtin.service:
+        name: ssh
+        state: started
+        enabled: true
+
+- name: Service Web (lin01)
+  hosts: web
+  become: true
+  tasks:
+    - name: Installer le serveur Web
+      ansible.builtin.package:
+        name: "{{ web_package }}"
+        state: present
+
+    - name: Creer le repertoire du site avec permissions restrictives
+      ansible.builtin.file:
+        path: "{{ web_root }}"
+        state: directory
+        owner: root
+        group: "{{ web_group }}"
+        mode: "2775"
+
+    - name: Deployer la page d'accueil
+      ansible.builtin.copy:
+        dest: "{{ web_root }}/index.html"
+        content: "<h1>InfraReady - {{ inventory_hostname }}</h1>\n"
+        owner: root
+        group: "{{ web_group }}"
+        mode: "0664"
+
+    - name: Deployer la configuration du site
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/infraready
+        content: |
+          server {
+              listen {{ web_port }} default_server;
+              root {{ web_root }};
+              index index.html;
+              location / { try_files $uri $uri/ =404; }
+          }
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Recharger nginx
+
+    - name: Activer le site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/infraready
+        dest: /etc/nginx/sites-enabled/infraready
+        state: link
+      notify: Recharger nginx
+
+    - name: Desactiver le site par defaut
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Recharger nginx
+
+    - name: Valider la configuration nginx
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Demarrer et activer nginx
+      ansible.builtin.service:
+        name: "{{ web_service }}"
+        state: started
+        enabled: true
+
+    - name: Verifier que le site repond (apres execution)
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ web_port }}/"
+        status_code: 200
+      register: web_check
+      retries: 5
+      delay: 2
+      until: web_check.status == 200
+  handlers:
+    - name: Recharger nginx
+      ansible.builtin.service:
+        name: "{{ web_service }}"
+        state: reloaded
+
+- name: Stockage - disque virtuel de TEST (lin01)
+  hosts: web
+  become: true
+  tasks:
+    - name: Securite - refuser de continuer sans confirmation explicite
+      ansible.builtin.assert:
+        that:
+          - storage_confirm == "yes"
+        fail_msg: >-
+          Operation sur disque bloquee. Verifier la cible ({{ storage_device }}) puis relancer avec
+          -e storage_confirm=yes
+        success_msg: "Confirmation explicite recue pour {{ storage_device }}"
+      tags: storage
+
+    - name: Lister les peripheriques (preuve de verification de la cible)
+      ansible.builtin.command: lsblk -f {{ storage_device }}
+      register: storage_lsblk
+      changed_when: false
+      tags: storage
+
+    - name: Afficher la cible
+      ansible.builtin.debug:
+        var: storage_lsblk.stdout_lines
+      tags: storage
+
+    - name: Verifier que le disque n'est pas le disque systeme
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['mounts'] | selectattr('device', 'search', storage_device) | selectattr('mount', 'equalto', '/') | list | length == 0
+        fail_msg: "{{ storage_device }} est le disque racine : arret."
+      tags: storage
+
+    - name: Creer le systeme de fichiers (idempotent - ne reformate pas un FS existant)
+      community.general.filesystem:
+        fstype: "{{ storage_fstype }}"
+        dev: "{{ storage_device }}"
+      tags: storage
+
+    - name: Monter le stockage et le rendre persistant (fstab)
+      ansible.posix.mount:
+        path: "{{ storage_mountpoint }}"
+        src: "{{ storage_device }}"
+        fstype: "{{ storage_fstype }}"
+        opts: defaults,nofail
+        state: mounted
+      tags: storage
+
+    - name: Appliquer les permissions sur le point de montage
+      ansible.builtin.file:
+        path: "{{ storage_mountpoint }}"
+        state: directory
+        owner: root
+        group: ops
+        mode: "0770"
+      tags: storage

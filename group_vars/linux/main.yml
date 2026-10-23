@@ -1,0 +1,40 @@
+---
+ansible_user: ansible
+ansible_become: true
+ansible_become_method: sudo
+# Authentification par cle SSH uniquement (aucun mot de passe versionne)
+ansible_ssh_private_key_file: ~/.ssh/id_ed25519_infraready
+
+# Comptes / groupes de test (Tache C)
+linux_groups:
+  - name: ops
+  - name: webdev
+linux_users:
+  - name: alice
+    groups: [ops]
+  - name: bob
+    groups: [webdev]
+  - name: charlie
+    groups: [webdev]
+
+# Service applicatif (Tache C)
+web_package: nginx
+web_service: nginx
+web_port: 80
+web_root: /var/www/infraready
+web_group: webdev
+
+# Stockage : disque virtuel de TEST uniquement.
+# Securite : aucune operation tant que storage_confirm n'est pas "yes"
+# ET que le peripherique est vide et non monte (voir playbooks/linux.yml).
+storage_device: /dev/sdb
+storage_fstype: ext4
+storage_mountpoint: /data
+storage_confirm: "no"
+
+# Maintenance (Tache E)
+maintenance_disk_threshold_percent: 80
+maintenance_allow_reboot: false
+maintenance_services_to_check:
+  - ssh
+  - nginx

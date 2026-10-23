@@ -1,0 +1,63 @@
+---
+# Tache F - Collecteurs Linux + stack Prometheus/Grafana (mon01)
+# windows_exporter est deploye par playbooks/windows.yml (tag monitoring).
+- name: Exporter de metriques Linux
+  hosts: linux
+  become: true
+  tasks:
+    - name: Installer node_exporter
+      ansible.builtin.apt:
+        name: prometheus-node-exporter
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Demarrer node_exporter
+      ansible.builtin.service:
+        name: prometheus-node-exporter
+        state: started
+        enabled: true
+
+- name: Stack Prometheus / Grafana (conteneurs Docker)
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Installer Docker et le plugin Compose
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Creer le repertoire de la stack
+      ansible.builtin.file:
+        path: /opt/monitoring
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copier la configuration de supervision
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../monitoring/"
+        dest: /opt/monitoring/
+        owner: root
+        group: root
+        mode: preserve
+      notify: Redemarrer la stack
+
+    - name: Demarrer Prometheus et Grafana
+      ansible.builtin.command: docker compose up -d
+      args:
+        chdir: /opt/monitoring
+      register: compose_up
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr"
+
+  handlers:
+    - name: Redemarrer la stack
+      ansible.builtin.command: docker compose up -d --force-recreate
+      args:
+        chdir: /opt/monitoring
+      changed_when: true

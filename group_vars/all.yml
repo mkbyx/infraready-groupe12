@@ -1,0 +1,14 @@
+---
+lab_domain: infraready.lab
+lab_netbios: INFRAREADY
+lab_network: 192.168.56.0/24
+dns_server_ip: 192.168.56.10
+
+# Hotes du labo (pour verifications DNS / supervision)
+lab_hosts:
+  dc01: 192.168.56.10
+  lin01: 192.168.56.20
+  mon01: 192.168.56.30
+
+node_exporter_port: 9100
+windows_exporter_port: 9182

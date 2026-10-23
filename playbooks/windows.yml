@@ -1,0 +1,103 @@
+---
+# Tache B / D - Configuration Windows (dc01)
+# Prerequis : WinRM active (scripts/Enable-WinRM.ps1), IP statique 192.168.56.10, nom dc01.
+# Lancement : ansible-playbook playbooks/windows.yml --ask-vault-pass
+- name: Installation AD DS, domaine et DNS
+  hosts: windows
+  tasks:
+    - name: Installer les roles AD DS et DNS
+      ansible.windows.win_feature:
+        name:
+          - AD-Domain-Services
+          - DNS
+        include_management_tools: true
+        state: present
+      register: feature_result
+      tags: addc
+
+    - name: Creer la foret / le domaine (redemarrage automatique si necessaire)
+      microsoft.ad.domain:
+        dns_domain_name: "{{ lab_domain }}"
+        domain_netbios_name: "{{ lab_netbios }}"
+        safe_mode_password: "{{ vault_windows_safe_mode_password }}"
+        reboot: true
+      register: domain_result
+      tags: addc
+
+    - name: Attendre que les services AD soient disponibles
+      ansible.windows.win_service:
+        name: NTDS
+        state: started
+      tags: addc
+
+- name: Groupes, comptes et droits
+  hosts: windows
+  tasks:
+    - name: Creer les groupes de securite
+      microsoft.ad.group:
+        name: "{{ item.name }}"
+        scope: global
+        category: security
+        description: "{{ item.description }}"
+        state: present
+      loop: "{{ windows_groups }}"
+      tags: ad_objects
+
+    - name: Creer les comptes de test
+      microsoft.ad.user:
+        name: "{{ item.name }}"
+        firstname: "{{ item.firstname }}"
+        surname: "{{ item.surname }}"
+        upn: "{{ item.name }}@{{ lab_domain }}"
+        password: "{{ vault_windows_test_user_password }}"
+        update_password: when_changed
+        enabled: true
+        groups:
+          add:
+            - "{{ item.group }}"
+        state: present
+      loop: "{{ windows_users }}"
+      no_log: true
+      tags: ad_objects
+
+    - name: Recuperer les derniers evenements du journal Security (preuve)
+      ansible.windows.win_shell: |
+        Get-WinEvent -LogName Security -MaxEvents 5 |
+          Select-Object TimeCreated, Id, ProviderName | Format-Table -AutoSize | Out-String
+      register: security_log
+      changed_when: false
+      tags: logs
+
+    - name: Afficher les evenements
+      ansible.builtin.debug:
+        var: security_log.stdout_lines
+      tags: logs
+
+- name: Supervision - windows_exporter et pare-feu
+  hosts: windows
+  tasks:
+    - name: Installer windows_exporter (MSI)
+      ansible.windows.win_package:
+        path: "{{ windows_exporter_msi_url }}"
+        arguments: ENABLED_COLLECTORS=cpu,cs,logical_disk,memory,net,os,service,system LISTEN_PORT={{ windows_exporter_port }}
+        state: present
+      tags: monitoring
+
+    - name: Autoriser le port de l'exporter uniquement depuis le reseau du labo
+      community.windows.win_firewall_rule:
+        name: windows_exporter
+        localport: "{{ windows_exporter_port }}"
+        remoteip: "{{ lab_network }}"
+        protocol: tcp
+        direction: in
+        action: allow
+        state: present
+        enabled: true
+      tags: monitoring
+
+    - name: Verifier que le service windows_exporter tourne
+      ansible.windows.win_service:
+        name: windows_exporter
+        state: started
+        start_mode: auto
+      tags: monitoring

@@ -1,0 +1,89 @@
+---
+# Tache E - Maintenance et mises a jour
+# Simulation : ansible-playbook playbooks/maintenance.yml --check
+# Reel       : ansible-playbook playbooks/maintenance.yml
+# Redemarrage : desactive par defaut (maintenance_allow_reboot=false)
+- name: Maintenance Linux
+  hosts: linux
+  become: true
+  tasks:
+    - name: Verifier l'espace disque (precaution avant mise a jour)
+      ansible.builtin.assert:
+        that:
+          - (item.size_total - item.size_available) / item.size_total * 100 < maintenance_disk_threshold_percent
+        fail_msg: "Espace disque insuffisant sur {{ item.mount }}"
+      loop: "{{ ansible_facts['mounts'] | selectattr('mount', 'in', ['/', '/data']) | list }}"
+      loop_control:
+        label: "{{ item.mount }}"
+
+    - name: Rafraichir le cache des paquets
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Appliquer les mises a jour (securite et corrections)
+      ansible.builtin.apt:
+        upgrade: safe
+        autoremove: true
+      register: upgrade_result
+
+    - name: Verifier si un redemarrage est requis
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Informer qu'un redemarrage est necessaire
+      ansible.builtin.debug:
+        msg: "Redemarrage requis sur {{ inventory_hostname }} - a planifier (snapshot au prealable)."
+      when: reboot_required.stat.exists
+
+    - name: Redemarrer uniquement si autorise explicitement
+      ansible.builtin.reboot:
+        reboot_timeout: 300
+      when: reboot_required.stat.exists and maintenance_allow_reboot | bool
+
+    - name: Verifier l'etat des services apres maintenance
+      ansible.builtin.service_facts:
+
+    - name: Controler les services critiques
+      ansible.builtin.assert:
+        that:
+          - (item ~ '.service') in ansible_facts.services
+          - ansible_facts.services[item ~ '.service'].state == 'running'
+        fail_msg: "Service {{ item }} non demarre"
+      loop: "{{ maintenance_services_to_check if inventory_hostname == 'lin01' else ['ssh'] }}"
+
+- name: Maintenance Windows (mecanismes natifs)
+  hosts: windows
+  tasks:
+    - name: Verifier l'espace disque du volume C
+      ansible.windows.win_shell: |
+        $d = Get-PSDrive C
+        [math]::Round(($d.Used / ($d.Used + $d.Free)) * 100, 1)
+      register: win_disk
+      changed_when: false
+
+    - name: Refuser la mise a jour si le disque est trop plein
+      ansible.builtin.assert:
+        that:
+          - win_disk.stdout | trim | float < maintenance_disk_threshold_percent
+        fail_msg: "Disque C: trop rempli ({{ win_disk.stdout | trim }}%)"
+
+    - name: Installer les mises a jour de securite et critiques (Windows Update natif)
+      ansible.windows.win_updates:
+        category_names:
+          - SecurityUpdates
+          - CriticalUpdates
+        reboot: "{{ maintenance_allow_reboot | bool }}"
+      register: win_update_result
+
+    - name: Afficher le resume des mises a jour
+      ansible.builtin.debug:
+        msg: "Installees : {{ win_update_result.installed_update_count }} - Redemarrage requis : {{ win_update_result.reboot_required }}"
+
+    - name: Verifier les services critiques
+      ansible.windows.win_service_info:
+        name: "{{ item }}"
+      loop: [DNS, NTDS, Netlogon]
+      register: win_services
+      failed_when: not win_services.exists or win_services.services[0].state != 'running'

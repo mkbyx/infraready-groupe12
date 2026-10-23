@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: InfraReady
+    folder: InfraReady
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

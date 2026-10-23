@@ -1,0 +1,8 @@
+---
+profile: moderate
+exclude_paths:
+  - .github/
+  - monitoring/
+  - evidence/
+skip_list:
+  - yaml[line-length]

@@ -1,0 +1,60 @@
+---
+# Controles apres execution (Tache D) - lancer apres chaque playbook et a la 2e execution
+- name: Verifications Linux
+  hosts: linux
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Resoudre dc01 via le DNS du domaine
+      ansible.builtin.command: getent hosts dc01.{{ lab_domain }}
+      register: dns_check
+      changed_when: false
+      failed_when: lab_hosts['dc01'] not in dns_check.stdout
+
+    - name: Tester la connectivite vers les autres hotes
+      ansible.builtin.command: ping -c 2 -W 2 {{ item.value }}
+      loop: "{{ lab_hosts | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      changed_when: false
+
+    - name: Verifier le montage /data (lin01)
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['mounts'] | selectattr('mount', 'equalto', storage_mountpoint) | list | length == 1
+      when: inventory_hostname == 'lin01'
+
+    - name: Verifier que le site Web repond (lin01)
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ web_port }}/"
+        status_code: 200
+      when: inventory_hostname == 'lin01'
+
+    - name: Verifier node_exporter
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ node_exporter_port }}/metrics"
+        return_content: false
+        status_code: 200
+
+- name: Verifications Windows
+  hosts: windows
+  tasks:
+    - name: Verifier les services AD / DNS
+      ansible.windows.win_service_info:
+        name: "{{ item }}"
+      loop: [NTDS, DNS, windows_exporter]
+      register: svc
+      failed_when: not svc.exists or svc.services[0].state != 'running'
+
+    - name: Verifier que le domaine repond
+      ansible.windows.win_shell: (Get-ADDomain).DNSRoot
+      register: domain_check
+      changed_when: false
+      failed_when: domain_check.stdout | trim != lab_domain
+
+    - name: Verifier les groupes crees
+      ansible.windows.win_shell: Get-ADGroup -Identity {{ item.name }} | Select-Object -ExpandProperty Name
+      loop: "{{ windows_groups }}"
+      changed_when: false
+      loop_control:
+        label: "{{ item.name }}"

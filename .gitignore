@@ -1,0 +1,14 @@
+# Secrets - ne jamais versionner en clair
+.vault_pass
+*.vault_pass
+vault_pass.txt
+*.pem
+*.key
+id_rsa*
+.env
+# Fichiers temporaires
+*.retry
+*.log
+__pycache__/
+.ansible/
+.env

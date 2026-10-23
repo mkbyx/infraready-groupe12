@@ -1,0 +1,8 @@
+---
+# 1. Copier ce fichier en vault.yml
+# 2. Remplacer les valeurs
+# 3. Chiffrer : ansible-vault encrypt group_vars/windows/vault.yml
+# NE JAMAIS commiter vault.yml en clair.
+vault_windows_admin_password: "CHANGEME"
+vault_windows_safe_mode_password: "CHANGEME"
+vault_windows_test_user_password: "CHANGEME"
