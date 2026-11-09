@@ -3,9 +3,6 @@
 Projet fil rouge Bachelor 3 – Cybersécurité, Informatique Infrastructure et Réseau.
 Laboratoire de 3 machines virtuelles administrées et automatisées avec Ansible, supervisées avec Prometheus/Grafana, validées par GitHub Actions.
 
-> **État du dépôt** : les fichiers fournis sont une base prête à adapter. Les sections `[À COMPLÉTER]`
-> (captures, sorties de commandes, résultats réels) doivent être remplies **après** exécution dans votre labo.
-
 ## Architecture
 
 | VM | Rôle | OS | IP |
