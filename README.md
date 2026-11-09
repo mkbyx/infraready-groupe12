@@ -7,9 +7,9 @@ Laboratoire de 3 machines virtuelles administrées et automatisées avec Ansible
 
 | VM | Rôle | OS | IP |
 |---|---|---|---|
-| dc01 | Contrôleur de domaine AD DS + DNS, cible Ansible Windows | Windows Server 2022 | 192.168.56.10 |
-| lin01 | Serveur Linux : Web (nginx), stockage, cible Ansible | Debian 12 / Ubuntu 22.04+ | 192.168.56.20 |
-| mon01 | Nœud de contrôle Ansible + Prometheus + Grafana | Debian 12 / Ubuntu 22.04+ | 192.168.56.30 |
+| dc01 | Contrôleur de domaine AD DS + DNS, cible Ansible Windows | Windows Server 2022 | 192.168.50.10 |
+| lin01 | Serveur Linux : Web (nginx), stockage, cible Ansible | Debian 12 / Ubuntu 22.04+ | 192.168.50.20 |
+| mon01 | Nœud de contrôle Ansible + Prometheus + Grafana | Debian 12 / Ubuntu 22.04+ | 192.168.50.30 |
 
 Domaine : `infraready.lab` – Réseau : host-only `192.168.56.0/24`. Voir `docs/architecture.md` et `docs/adressage-ip.md`.
 
