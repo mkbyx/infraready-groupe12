@@ -5,7 +5,7 @@
 
    +----------------------+     +----------------------+     +----------------------------+
    | dc01 (Windows 2022)  |     | lin01 (Linux)        |     | mon01 (Linux)              |
-   | 192.168.56.10        |     | 192.168.56.20        |     | 192.168.56.30              |
+   | 192.168.50.10        |     | 192.168.50.20        |     | 192.168.50.30              |
    | AD DS, DNS           |     | nginx :80, /data     |     | Ansible, Prometheus :9090  |
    | WinRM :5986          |     | SSH :22              |     | Grafana :3000, SSH :22     |
    | windows_exporter     |     | node_exporter :9100  |     | node_exporter :9100        |
